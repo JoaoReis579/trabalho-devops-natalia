@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-index:
+    name: Verificar index.html
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirmar index.html na raiz
+        run: |
+          if [ ! -f index.html ]; then
+            echo "::error::index.html não existe na raiz do repositório."
+            exit 1
+          fi
+
+  quality:
+    name: Quality (Node ${{ matrix.node-version }})
+    needs: check-index
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Instalar dependências
+        run: npm install
+      - name: Executar HTMLHint
+        run: npx htmlhint "**/*.html" --ignore "node_modules/**"
+      - name: Bloquear arquivos maiores que 500 KB
+        run: |
+          large_files=$(find . -type d \( -name .git -o -name node_modules \) -prune -o -type f -size +500k -print)
+          if [ -n "$large_files" ]; then
+            echo "::error::Arquivos maiores que 500 KB:"
+            printf '%s\n' "$large_files"
+            exit 1
+          fi
+      - name: Procurar termos bloqueados
+        run: |
+          if grep -rniE "TODO|FIXME|senha|password" --include="*.html" --include="*.css" --include="*.js" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.github .; then
+            echo "::error::Foram encontrados termos bloqueados nos arquivos de código."
+            exit 1
+          fi
+      - name: Verificar links
+        run: bash scripts/check-links.sh
